@@ -28,6 +28,7 @@ import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
+import time
 
 from transformers import (
     WEIGHTS_NAME,
@@ -199,6 +200,7 @@ def train(args, train_dataset, model, tokenizer):
     # Added here for reproductibility
     set_seed(args)
 
+    train_start = time.time()    
     for _ in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
@@ -292,6 +294,10 @@ def train(args, train_dataset, model, tokenizer):
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
             break
+
+    train_total_time = time.time() - train_start
+    print ("INFO: *** Total time to train is : {} sec".format(train_total_time))
+    
 
     if args.local_rank in [-1, 0]:
         tb_writer.close()
