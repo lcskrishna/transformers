@@ -1,6 +1,6 @@
 export SQUAD_DIR=/data/datasets/wikipedia_bookcorpus_hdf5/download/squad/v1.1/
 
-export HIP_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export HIP_VISIBLE_DEVICES=0
 
 python3.6 examples/run_squad.py \
   --model_type bert \
