@@ -15,7 +15,7 @@
 # limitations under the License.
 """ Finetuning the library models for question-answering on SQuAD (DistilBERT, Bert, XLM, XLNet)."""
 
-
+from __future__ import print_function
 import argparse
 import glob
 import logging
@@ -29,6 +29,11 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 import time
+
+import sys
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
 from transformers import (
     WEIGHTS_NAME,
@@ -145,11 +150,14 @@ def train(args, train_dataset, model, tokenizer):
 
     if args.fp16:
         try:
-            from apex import amp
+            #   from apex import amp
+            from torch.cuda.amp import autocast
+            from torch.cuda.amp import GradScaler
+            scalar = GradScaler()
         except ImportError:
-            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
+            raise ImportError("Please install pytorch latest from source (Version >= 1.5) to use fp16 training.")
 
-        model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
+        #model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
 
     # multi-gpu training (should be after apex fp16 initialization)
     if args.n_gpu > 1:
@@ -202,9 +210,9 @@ def train(args, train_dataset, model, tokenizer):
     # Added here for reproductibility
     set_seed(args)
 
+    eprint ("INFO: Running the model. ")
     train_start = time.time()
-    #with torch.autograd.profiler.profile(use_cuda=True, record_shapes=True) as prof :
-    with torch.autograd.profiler.emit_nvtx():
+    with torch.autograd.profiler.profile(use_cuda=True, record_shapes=True) as prof:    
         for _ in train_iterator:
             epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
             for step, batch in enumerate(epoch_iterator):
@@ -236,10 +244,11 @@ def train(args, train_dataset, model, tokenizer):
                         inputs.update(
                             {"langs": (torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id).to(args.device)}
                         )
-
-                outputs = model(**inputs)
-                # model outputs are always tuple in transformers (see doc)
-                loss = outputs[0]
+                
+                with autocast():
+                    outputs = model(**inputs)
+                    # model outputs are always tuple in transformers (see doc)
+                    loss = outputs[0]
 
                 if args.n_gpu > 1:
                     loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
@@ -247,19 +256,27 @@ def train(args, train_dataset, model, tokenizer):
                     loss = loss / args.gradient_accumulation_steps
 
                 if args.fp16:
-                    with amp.scale_loss(loss, optimizer) as scaled_loss:
-                        scaled_loss.backward()
+                    scalar.scale(loss).backward()
+                    #with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    #    scaled_loss.backward()
                 else:
                     loss.backward()
 
                 tr_loss += loss.item()
                 if (step + 1) % args.gradient_accumulation_steps == 0:
                     if args.fp16:
-                        torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
+                        scalar.unscale_(optimizer)
+                        torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                        #torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
                     else:
                         torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
-                    optimizer.step()
+                    if args.fp16:
+                        scalar.step(optimizer)
+                        scalar.update()
+                    else:
+                        optimizer.step()
+                    
                     scheduler.step()  # Update learning rate schedule
                     model.zero_grad()
                     global_step += 1
@@ -306,11 +323,12 @@ def train(args, train_dataset, model, tokenizer):
     else:
         training_seq_per_sec = (args.per_gpu_train_batch_size * args.max_steps * args.n_gpu)/train_total_time
         print ("INFO: Total training sequences/sec = {} seq/sec".format(training_seq_per_sec))
-    print ("INFO: Generating profiler results ... ")
-    #print (prof.key_averages(group_by_input_shape=True).table(sort_by="cuda_time_total"))
+    print ("INFO: Generating profiling results.")
+    print (prof.key_averages(group_by_input_shape=True).table(sort_by="cuda_time_total"))
     #prof.export_rpd("tracefile.rpd")
     #prof.export_chrome_trace("output.json")
     print ("INFO: Finished generating profiler results.")
+
     
     if args.local_rank in [-1, 0]:
         tb_writer.close()
@@ -804,13 +822,13 @@ def main():
     # Before we do anything with models, we want to ensure that we get fp16 execution of torch.einsum if args.fp16 is set.
     # Otherwise it'll default to "promote" mode, and we'll get fp32 operations. Note that running `--fp16_opt_level="O2"` will
     # remove the need for this code, but it is still valid.
-    if args.fp16:
-        try:
-            import apex
+    #if args.fp16:
+        #try:
+            #import apex
 
-            apex.amp.register_half_function(torch, "einsum")
-        except ImportError:
-            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
+            #apex.amp.register_half_function(torch, "einsum")
+        #except ImportError:
+        #    raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
 
     # Training
     if args.do_train:

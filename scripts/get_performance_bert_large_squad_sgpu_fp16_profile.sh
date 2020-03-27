@@ -1,8 +1,8 @@
 export SQUAD_DIR=/data/datasets/wikipedia_bookcorpus_hdf5/download/squad/v1.1/
 
-export CUDA_VISIBLE_DEVICES=0
+export HIP_VISIBLE_DEVICES=0
 
-python examples/run_squad.py \
+python3.6 examples/run_squad_profile.py \
   --model_type bert \
   --model_name_or_path bert-large-uncased-whole-word-masking \
   --do_train \

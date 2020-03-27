@@ -15,7 +15,7 @@
 # limitations under the License.
 """ Finetuning the library models for question-answering on SQuAD (DistilBERT, Bert, XLM, XLNet)."""
 
-
+from __future__ import print_function
 import argparse
 import glob
 import logging
@@ -29,6 +29,11 @@ from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
 import time
+
+import sys
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
 from transformers import (
     WEIGHTS_NAME,
@@ -145,11 +150,14 @@ def train(args, train_dataset, model, tokenizer):
 
     if args.fp16:
         try:
-            from apex import amp
+            #   from apex import amp
+            from torch.cuda.amp import autocast
+            from torch.cuda.amp import GradScaler
+            scalar = GradScaler()
         except ImportError:
-            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
+            raise ImportError("Please install pytorch latest from source (Version >= 1.5) to use fp16 training.")
 
-        model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
+        #model, optimizer = amp.initialize(model, optimizer, opt_level=args.fp16_opt_level)
 
     # multi-gpu training (should be after apex fp16 initialization)
     if args.n_gpu > 1:
@@ -202,102 +210,110 @@ def train(args, train_dataset, model, tokenizer):
     # Added here for reproductibility
     set_seed(args)
 
-    train_start = time.time()
-    #with torch.autograd.profiler.profile(use_cuda=True, record_shapes=True) as prof :
-    with torch.autograd.profiler.emit_nvtx():
-        for _ in train_iterator:
-            epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
-            for step, batch in enumerate(epoch_iterator):
+    eprint ("INFO: Running the model. ")
+    train_start = time.time()    
+    for _ in train_iterator:
+        epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+        for step, batch in enumerate(epoch_iterator):
 
-                # Skip past any already trained steps if resuming training
-                if steps_trained_in_current_epoch > 0:
-                    steps_trained_in_current_epoch -= 1
-                    continue
+            # Skip past any already trained steps if resuming training
+            if steps_trained_in_current_epoch > 0:
+                steps_trained_in_current_epoch -= 1
+                continue
 
-                model.train()
-                batch = tuple(t.to(args.device) for t in batch)
+            model.train()
+            batch = tuple(t.to(args.device) for t in batch)
 
-                inputs = {
-                    "input_ids": batch[0],
-                    "attention_mask": batch[1],
-                    "token_type_ids": batch[2],
-                    "start_positions": batch[3],
-                    "end_positions": batch[4],
-                }
+            inputs = {
+                "input_ids": batch[0],
+                "attention_mask": batch[1],
+                "token_type_ids": batch[2],
+                "start_positions": batch[3],
+                "end_positions": batch[4],
+            }
 
-                if args.model_type in ["xlm", "roberta", "distilbert", "camembert"]:
-                    del inputs["token_type_ids"]
+            if args.model_type in ["xlm", "roberta", "distilbert", "camembert"]:
+                del inputs["token_type_ids"]
 
-                if args.model_type in ["xlnet", "xlm"]:
-                    inputs.update({"cls_index": batch[5], "p_mask": batch[6]})
-                    if args.version_2_with_negative:
-                        inputs.update({"is_impossible": batch[7]})
-                    if hasattr(model, "config") and hasattr(model.config, "lang2id"):
-                        inputs.update(
-                            {"langs": (torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id).to(args.device)}
-                        )
-
+            if args.model_type in ["xlnet", "xlm"]:
+                inputs.update({"cls_index": batch[5], "p_mask": batch[6]})
+                if args.version_2_with_negative:
+                    inputs.update({"is_impossible": batch[7]})
+                if hasattr(model, "config") and hasattr(model.config, "lang2id"):
+                    inputs.update(
+                        {"langs": (torch.ones(batch[0].shape, dtype=torch.int64) * args.lang_id).to(args.device)}
+                    )
+            
+            with autocast():
                 outputs = model(**inputs)
                 # model outputs are always tuple in transformers (see doc)
                 loss = outputs[0]
 
-                if args.n_gpu > 1:
-                    loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
-                if args.gradient_accumulation_steps > 1:
-                    loss = loss / args.gradient_accumulation_steps
+            if args.n_gpu > 1:
+                loss = loss.mean()  # mean() to average on multi-gpu parallel (not distributed) training
+            if args.gradient_accumulation_steps > 1:
+                loss = loss / args.gradient_accumulation_steps
+
+            if args.fp16:
+                scalar.scale(loss).backward()
+                #with amp.scale_loss(loss, optimizer) as scaled_loss:
+                #    scaled_loss.backward()
+            else:
+                loss.backward()
+
+            tr_loss += loss.item()
+            if (step + 1) % args.gradient_accumulation_steps == 0:
+                if args.fp16:
+                    scalar.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                    #torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
+                else:
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
                 if args.fp16:
-                    with amp.scale_loss(loss, optimizer) as scaled_loss:
-                        scaled_loss.backward()
+                    scalar.step(optimizer)
+                    scalar.update()
                 else:
-                    loss.backward()
-
-                tr_loss += loss.item()
-                if (step + 1) % args.gradient_accumulation_steps == 0:
-                    if args.fp16:
-                        torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
-                    else:
-                        torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-
                     optimizer.step()
-                    scheduler.step()  # Update learning rate schedule
-                    model.zero_grad()
-                    global_step += 1
+                
+                scheduler.step()  # Update learning rate schedule
+                model.zero_grad()
+                global_step += 1
 
-                    # Log metrics
-                    if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
-                        # Only evaluate when single GPU otherwise metrics may not average well
-                        if args.local_rank == -1 and args.evaluate_during_training:
-                            results = evaluate(args, model, tokenizer)
-                            for key, value in results.items():
-                                tb_writer.add_scalar("eval_{}".format(key), value, global_step)
-                        tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
-                        tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
-                        logging_loss = tr_loss
+                # Log metrics
+                if args.local_rank in [-1, 0] and args.logging_steps > 0 and global_step % args.logging_steps == 0:
+                    # Only evaluate when single GPU otherwise metrics may not average well
+                    if args.local_rank == -1 and args.evaluate_during_training:
+                        results = evaluate(args, model, tokenizer)
+                        for key, value in results.items():
+                            tb_writer.add_scalar("eval_{}".format(key), value, global_step)
+                    tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
+                    tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
+                    logging_loss = tr_loss
 
-                    # Save model checkpoint
-                    if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
-                        output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
-                        if not os.path.exists(output_dir):
-                            os.makedirs(output_dir)
-                        # Take care of distributed/parallel training
-                        model_to_save = model.module if hasattr(model, "module") else model
-                        model_to_save.save_pretrained(output_dir)
-                        tokenizer.save_pretrained(output_dir)
+                # Save model checkpoint
+                if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
+                    output_dir = os.path.join(args.output_dir, "checkpoint-{}".format(global_step))
+                    if not os.path.exists(output_dir):
+                        os.makedirs(output_dir)
+                    # Take care of distributed/parallel training
+                    model_to_save = model.module if hasattr(model, "module") else model
+                    model_to_save.save_pretrained(output_dir)
+                    tokenizer.save_pretrained(output_dir)
 
-                        torch.save(args, os.path.join(output_dir, "training_args.bin"))
-                        logger.info("Saving model checkpoint to %s", output_dir)
+                    torch.save(args, os.path.join(output_dir, "training_args.bin"))
+                    logger.info("Saving model checkpoint to %s", output_dir)
 
-                        torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
-                        torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
-                        logger.info("Saving optimizer and scheduler states to %s", output_dir)
+                    torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
+                    torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+                    logger.info("Saving optimizer and scheduler states to %s", output_dir)
 
-                if args.max_steps > 0 and global_step > args.max_steps:
-                    epoch_iterator.close()
-                    break
             if args.max_steps > 0 and global_step > args.max_steps:
-                train_iterator.close()
+                epoch_iterator.close()
                 break
+        if args.max_steps > 0 and global_step > args.max_steps:
+            train_iterator.close()
+            break
 
     train_total_time = time.time() - train_start
     print ("INFO: *** Total time to train is : {} sec".format(train_total_time))
@@ -306,11 +322,6 @@ def train(args, train_dataset, model, tokenizer):
     else:
         training_seq_per_sec = (args.per_gpu_train_batch_size * args.max_steps * args.n_gpu)/train_total_time
         print ("INFO: Total training sequences/sec = {} seq/sec".format(training_seq_per_sec))
-    print ("INFO: Generating profiler results ... ")
-    #print (prof.key_averages(group_by_input_shape=True).table(sort_by="cuda_time_total"))
-    #prof.export_rpd("tracefile.rpd")
-    #prof.export_chrome_trace("output.json")
-    print ("INFO: Finished generating profiler results.")
     
     if args.local_rank in [-1, 0]:
         tb_writer.close()
@@ -804,13 +815,13 @@ def main():
     # Before we do anything with models, we want to ensure that we get fp16 execution of torch.einsum if args.fp16 is set.
     # Otherwise it'll default to "promote" mode, and we'll get fp32 operations. Note that running `--fp16_opt_level="O2"` will
     # remove the need for this code, but it is still valid.
-    if args.fp16:
-        try:
-            import apex
+    #if args.fp16:
+        #try:
+            #import apex
 
-            apex.amp.register_half_function(torch, "einsum")
-        except ImportError:
-            raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
+            #apex.amp.register_half_function(torch, "einsum")
+        #except ImportError:
+        #    raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
 
     # Training
     if args.do_train:
