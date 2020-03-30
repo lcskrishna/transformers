@@ -91,14 +91,6 @@ MODEL_CLASSES = {
     "albert": (AlbertConfig, AlbertForQuestionAnswering, AlbertTokenizer),
 }
 
-
-def set_seed(args):
-    random.seed(args.seed)
-    np.random.seed(args.seed)
-    torch.manual_seed(args.seed)
-    if args.n_gpu > 0:
-        torch.cuda.manual_seed_all(args.seed)
-
 def get_percentage(time_us,total_time_us):
     percentage = (time_us * 100.0)/total_time_us
     return percentage
@@ -111,7 +103,7 @@ def extract_profile_information_to_csv(profile_results, sort_by=None):
     fs.write('\n')
     if sort_by is not None:
         profile_results = EventList(sorted(profile_results, key=lambda evt : getattr(evt, sort_by), reverse=True), use_cuda=True)
-
+    
     self_cpu_time_total = sum([event.self_cpu_time_total for event in profile_results])
     cuda_time_total = sum([evt.cuda_time_total for evt in profile_results])
     header_str = "KernelName" + "|" + "GPU Percentage(%)" + "|" + "GPU Total Time" + "|" + "GPU Average" + "|" + "NumOfCalls"
@@ -123,12 +115,19 @@ def extract_profile_information_to_csv(profile_results, sort_by=None):
         output_str = output_str + event.key + "|" ## Name.
         percentage_gpu = str(get_percentage(event.cuda_time_total, cuda_time_total))
         output_str = output_str + percentage_gpu + "|"
-        output_str = output_str + event.cuda_time_total_str + "|"
+        output_str = output_str + str(event.cuda_time_total) + "|"
         output_str = output_str + event.cuda_time_str + "|"
-        output_str = output_str + str(event.count)
+        output_str = output_str + str(event.count) 
         fs.write(output_str)
         fs.write("\n")
     fs.close()
+
+def set_seed(args):
+    random.seed(args.seed)
+    np.random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if args.n_gpu > 0:
+        torch.cuda.manual_seed_all(args.seed)
 
 
 def to_list(tensor):
@@ -339,7 +338,7 @@ def train(args, train_dataset, model, tokenizer):
         print ("INFO: Total training sequences/sec = {} seq/sec".format(training_seq_per_sec))
     print ("INFO: Generating profiler results ... ")
     #print (prof.key_averages(group_by_input_shape=True).table(sort_by="cuda_time_total"))
-    extract_profile_information_to_csv(prof.key_averages(group_by_input_shape=True), sort_by="cuda_time_total")
+    extract_profile_information_to_csv(prof.key_averages(group_by_input_shape=True),sort_by="cuda_time_total")
     #prof.export_rpd("tracefile.rpd")
     #prof.export_chrome_trace("output.json")
     print ("INFO: Finished generating profiler results.")

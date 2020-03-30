@@ -128,7 +128,7 @@ def extract_profile_information_to_csv(profile_results, sort_by=None):
         output_str = output_str + event.key + "|" ## Name.
         percentage_gpu = str(get_percentage(event.cuda_time_total, cuda_time_total))
         output_str = output_str + percentage_gpu + "|"
-        output_str = output_str + event.cuda_time_total_str + "|"
+        output_str = output_str + str(event.cuda_time_total) + "|"
         output_str = output_str + event.cuda_time_str + "|"
         output_str = output_str + str(event.count)
         fs.write(output_str)
