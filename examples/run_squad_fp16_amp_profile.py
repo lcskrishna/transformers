@@ -357,9 +357,9 @@ def train(args, train_dataset, model, tokenizer):
         print ("INFO: Total training sequences/sec = {} seq/sec".format(training_seq_per_sec))
     print ("INFO: Generating profiling results.")
     #print (prof.key_averages(group_by_input_shape=True).table(sort_by="cuda_time_total"))
-    extract_profile_information_to_csv(prof.key_averages(group_by_input_shape=True), sort_by="cuda_time_total")
+    #extract_profile_information_to_csv(prof.key_averages(group_by_input_shape=True), sort_by="cuda_time_total")
     #prof.export_rpd("tracefile.rpd")
-    #prof.export_chrome_trace("output.json")
+    prof.export_chrome_trace("output.json")
     print ("INFO: Finished generating profiler results.")
 
     
