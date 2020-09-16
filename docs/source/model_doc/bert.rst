@@ -27,13 +27,10 @@ Tips:
 
 - BERT is a model with absolute position embeddings so it's usually advised to pad the inputs on
   the right rather than the left.
-- BERT was trained with a masked language modeling (MLM) objective. It is therefore efficient at predicting masked
-  tokens and at NLU in general, but is not optimal for text generation. Models trained with a causal language
-  modeling (CLM) objective are better in that regard.
-- Alongside MLM, BERT was trained using a next sentence prediction (NSP) objective using the [CLS] token as a sequence
-  approximate. The user may use this token (the first token in a sequence built with special tokens) to get a sequence
-  prediction rather than a token prediction. However, averaging over the sequence may yield better results than using
-  the [CLS] token.
+- BERT was trained with the masked language modeling (MLM) and next sentence prediction (NSP) objectives. It is efficient at predicting masked
+  tokens and at NLU in general, but is not optimal for text generation.
+
+The original code can be found `here <https://github.com/google-research/bert>`_.
 
 BertConfig
 ~~~~~~~~~~~~~~~~~~~~~
@@ -50,6 +47,23 @@ BertTokenizer
         create_token_type_ids_from_sequences, save_vocabulary
 
 
+BertTokenizerFast
+~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.BertTokenizerFast
+    :members:
+
+
+Bert specific outputs
+~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.modeling_bert.BertForPreTrainingOutput
+    :members:
+
+.. autoclass:: transformers.modeling_tf_bert.TFBertForPreTrainingOutput
+    :members:
+
+
 BertModel
 ~~~~~~~~~~~~~~~~~~~~
 
@@ -61,6 +75,13 @@ BertForPreTraining
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: transformers.BertForPreTraining
+    :members:
+
+
+BertModelLMHeadModel
+~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.BertLMHeadModel
     :members:
 
 
@@ -117,6 +138,13 @@ TFBertForPreTraining
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: transformers.TFBertForPreTraining
+    :members:
+
+
+TFBertModelLMHeadModel
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.TFBertLMHeadModel
     :members:
 
 

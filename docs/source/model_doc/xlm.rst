@@ -30,6 +30,8 @@ Tips:
 - XLM has multilingual checkpoints which leverage a specific `lang` parameter. Check out the
   `multi-lingual <../multilingual.html>`__ page for more information.
 
+The original code can be found `here <https://github.com/facebookresearch/XLM/>`_.
+
 
 XLMConfig
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -43,6 +45,14 @@ XLMTokenizer
 .. autoclass:: transformers.XLMTokenizer
     :members: build_inputs_with_special_tokens, get_special_tokens_mask,
         create_token_type_ids_from_sequences, save_vocabulary
+
+
+XLM specific outputs
+~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.modeling_xlm.XLMForQuestionAnsweringOutput
+    :members:
+
 
 XLMModel
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -62,6 +72,20 @@ XLMForSequenceClassification
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. autoclass:: transformers.XLMForSequenceClassification
+    :members:
+
+
+XLMForMultipleChoice
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.XLMForMultipleChoice
+    :members:
+
+
+XLMForTokenClassification
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.XLMForTokenClassification
     :members:
 
 
@@ -98,6 +122,21 @@ TFXLMForSequenceClassification
 
 .. autoclass:: transformers.TFXLMForSequenceClassification
     :members:
+
+
+TFXLMForMultipleChoice
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.TFXLMForMultipleChoice
+    :members:
+
+
+TFXLMForTokenClassification
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. autoclass:: transformers.TFXLMForTokenClassification
+    :members:
+
 
 
 TFXLMForQuestionAnsweringSimple

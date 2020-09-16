@@ -16,15 +16,15 @@
 
 
 import json
-import logging
 import os
 
 import regex as re
 
 from .tokenization_utils import PreTrainedTokenizer
+from .utils import logging
 
 
-logger = logging.getLogger(__name__)
+logger = logging.get_logger(__name__)
 
 VOCAB_FILES_NAMES = {
     "vocab_file": "vocab.json",
@@ -140,12 +140,6 @@ class CTRLTokenizer(PreTrainedTokenizer):
 
     def __init__(self, vocab_file, merges_file, unk_token="<unk>", **kwargs):
         super().__init__(unk_token=unk_token, **kwargs)
-        self.max_len_single_sentence = (
-            self.max_len
-        )  # no default special tokens - you can update this value if you add special tokens
-        self.max_len_sentences_pair = (
-            self.max_len
-        )  # no default special tokens - you can update this value if you add special tokens
 
         with open(vocab_file, encoding="utf-8") as vocab_handle:
             self.encoder = json.load(vocab_handle)
@@ -208,8 +202,7 @@ class CTRLTokenizer(PreTrainedTokenizer):
         return word
 
     def _tokenize(self, text):
-        """ Tokenize a string.
-        """
+        """Tokenize a string."""
         split_tokens = []
 
         words = re.findall(r"\S+\n?", text)

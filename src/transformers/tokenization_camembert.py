@@ -15,19 +15,17 @@
 """ Tokenization classes for Camembert model."""
 
 
-import logging
 import os
 from shutil import copyfile
 from typing import List, Optional
 
 import sentencepiece as spm
 
-from transformers.tokenization_utils import PreTrainedTokenizer
+from .tokenization_utils import PreTrainedTokenizer
+from .utils import logging
 
-from .tokenization_xlnet import SPIECE_UNDERLINE
 
-
-logger = logging.getLogger(__name__)
+logger = logging.get_logger(__name__)
 
 VOCAB_FILES_NAMES = {"vocab_file": "sentencepiece.bpe.model"}
 
@@ -47,6 +45,8 @@ SHARED_MODEL_IDENTIFIERS = [
     "Musixmatch/umberto-commoncrawl-cased-v1",
     "Musixmatch/umberto-wikipedia-uncased-v1",
 ]
+
+SPIECE_UNDERLINE = "▁"
 
 
 class CamembertTokenizer(PreTrainedTokenizer):
@@ -103,6 +103,7 @@ class CamembertTokenizer(PreTrainedTokenizer):
     vocab_files_names = VOCAB_FILES_NAMES
     pretrained_vocab_files_map = PRETRAINED_VOCAB_FILES_MAP
     max_model_input_sizes = PRETRAINED_POSITIONAL_EMBEDDINGS_SIZES
+    model_input_names = ["attention_mask"]
 
     def __init__(
         self,
@@ -129,8 +130,6 @@ class CamembertTokenizer(PreTrainedTokenizer):
             additional_special_tokens=additional_special_tokens,
             **kwargs,
         )
-        self.max_len_single_sentence = self.max_len - 2  # take into account special tokens
-        self.max_len_sentences_pair = self.max_len - 4  # take into account special tokens
         self.sp_model = spm.SentencePieceProcessor()
         self.sp_model.Load(str(vocab_file))
         self.vocab_file = vocab_file
@@ -155,7 +154,7 @@ class CamembertTokenizer(PreTrainedTokenizer):
         Args:
             token_ids_0 (:obj:`List[int]`):
                 List of IDs to which the special tokens will be added
-            token_ids_1 (:obj:`List[int]`, `optional`, defaults to :obj:`None`):
+            token_ids_1 (:obj:`List[int]`, `optional`):
                 Optional second list of IDs for sequence pairs.
 
         Returns:
@@ -173,18 +172,18 @@ class CamembertTokenizer(PreTrainedTokenizer):
     ) -> List[int]:
         """
         Retrieves sequence ids from a token list that has no special tokens added. This method is called when adding
-        special tokens using the tokenizer ``prepare_for_model`` or ``encode_plus`` methods.
+        special tokens using the tokenizer ``prepare_for_model`` method.
 
         Args:
             token_ids_0 (:obj:`List[int]`):
                 List of ids.
-            token_ids_1 (:obj:`List[int]`, `optional`, defaults to :obj:`None`):
+            token_ids_1 (:obj:`List[int]`, `optional`):
                 Optional second list of IDs for sequence pairs.
             already_has_special_tokens (:obj:`bool`, `optional`, defaults to :obj:`False`):
                 Set to True if the token list is already formatted with special tokens for the model
 
         Returns:
-            :obj:`List[int]`: A list of integers in the range [0, 1]: 0 for a special token, 1 for a sequence token.
+            :obj:`List[int]`: A list of integers in the range [0, 1]: 1 for a special token, 0 for a sequence token.
         """
         if already_has_special_tokens:
             if token_ids_1 is not None:
@@ -203,31 +202,24 @@ class CamembertTokenizer(PreTrainedTokenizer):
     ) -> List[int]:
         """
         Creates a mask from the two sequences passed to be used in a sequence-pair classification task.
-        A CamemBERT sequence pair mask has the following format:
-
-        ::
-
-            0 0 0 0 0 0 0 0 0 0 0 1 1 1 1 1 1 1 1 1
-            | first sequence  | | second sequence |
-
-        if token_ids_1 is None, only returns the first portion of the mask (0s).
+        CamemBERT, like RoBERTa, does not make use of token type ids, therefore a list of zeros is returned.
 
         Args:
             token_ids_0 (:obj:`List[int]`):
                 List of ids.
-            token_ids_1 (:obj:`List[int]`, `optional`, defaults to :obj:`None`):
+            token_ids_1 (:obj:`List[int]`, `optional`):
                 Optional second list of IDs for sequence pairs.
 
         Returns:
-            :obj:`List[int]`: List of `token type IDs <../glossary.html#token-type-ids>`_ according to the given
-            sequence(s).
+            :obj:`List[int]`: List of zeros.
+
         """
         sep = [self.sep_token_id]
         cls = [self.cls_token_id]
 
         if token_ids_1 is None:
             return len(cls + token_ids_0 + sep) * [0]
-        return len(cls + token_ids_0 + sep + sep) * [0] + len(token_ids_1 + sep) * [1]
+        return len(cls + token_ids_0 + sep + sep + token_ids_1 + sep) * [0]
 
     @property
     def vocab_size(self):
@@ -262,7 +254,7 @@ class CamembertTokenizer(PreTrainedTokenizer):
             import sentencepiece as spm
         except ImportError:
             logger.warning(
-                "You need to install SentencePiece to use AlbertTokenizer: https://github.com/google/sentencepiece"
+                "You need to install SentencePiece to use CamembertTokenizer: https://github.com/google/sentencepiece"
                 "pip install sentencepiece"
             )
             raise
